@@ -198,7 +198,7 @@ module Gitlab
         end
       end
 
-      # Delegate log to Grit method
+      # Use the Rugged Walker API to build an array of commits.
       #
       # Usage.
       #   repo.log(
@@ -213,19 +213,27 @@ module Gitlab
           limit: 10,
           offset: 0,
           path: nil,
-          ref: root_ref,
-          follow: false
+          ref: root_ref
         }
 
         options = default_options.merge(options)
+        actual_ref = options[:ref] || root_ref
 
-        grit.log(
-          options[:ref] || root_ref,
-          options[:path],
-          max_count: options[:limit].to_i,
-          skip: options[:offset].to_i,
-          follow: options[:follow]
-        )
+        begin
+          ref_sha = rugged.lookup(actual_ref).oid
+        rescue Rugged::InvalidError, Rugged::OdbError
+          # Maybe the ref isn't an SHA; try treating it as a tag or branch name
+          ref_sha = get_sha_from_ref(actual_ref)
+        end
+
+        # Instantiate a Walker and add the SHA hash
+        walker = Rugged::Walker.new(rugged)
+        walker.push(ref_sha)
+
+        build_log(walker, options)
+      rescue Rugged::OdbError
+        # Return an empty array if the ref wasn't found
+        Array.new
       end
 
       # Delegate commits_between to Grit method
@@ -365,6 +373,61 @@ module Gitlab
         walker.sorting(Rugged::SORT_TOPO | Rugged::SORT_REVERSE)
         walker.push(ref)
         walker.count
+      end
+
+      private
+
+      # Return the commit hash of a named ref.  Raises a Rugged::OdbError if
+      # the ref_name argument isn't found in the repo.
+      def get_sha_from_ref(ref_name)
+        regex = Regexp.escape(ref_name)
+        ref_obj = rugged.references.find { |i| i.name.match(/#{regex}$/) }
+        if ref_obj
+          if ref_obj.target.is_a? Rugged::Tag::Annotation
+            ref_obj.target.target.oid
+          else
+            ref_obj.target_id
+          end
+        else
+          # No ref_obj means we couldn't find the ref in the repo
+          raise Rugged::OdbError
+        end
+      end
+
+      # Return an array of log commits, given a populated Rugged::Walker object
+      # and the public log() method's options.
+      def build_log(walker, options)
+
+        commits = Array.new
+        skipped = 0
+
+        walker.each_with_index { |c, i|
+          break if commits.length >= options[:limit]
+          should_push = false
+          if options[:path]
+            # Check the commit's deltas to see if it touches the :path argument
+            c.parents[0].diff(c).each_delta { |d|
+              should_push = false
+              if d.old_file[:path].match(/^#{options[:path]}/)
+                should_push = true
+                break
+              elsif d.new_file[:path].match(/^#{options[:path]}/)
+                should_push = true
+                break
+              end
+            }
+          else
+            # No :path option given
+            should_push = true
+          end
+
+          if should_push
+            skipped += 1
+            commits.push(c) if skipped > options[:offset]
+          end
+        }
+
+        commits
       end
     end
   end
