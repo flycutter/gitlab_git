@@ -168,7 +168,9 @@ module Gitlab
 
       def diffs
         if raw_commit.is_a?(Rugged::Commit)
-          raw_commit.parents[0].diff(raw_commit).map { |diff| Gitlab::Git::Diff.new(diff) }
+          raw_commit.parents[0].diff(raw_commit).map do |diff|
+            Gitlab::Git::Diff.new(diff)
+          end
         else
           raw_commit.diffs.map { |diff| Gitlab::Git::Diff.new(diff) }
         end

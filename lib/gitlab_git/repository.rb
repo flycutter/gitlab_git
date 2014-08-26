@@ -381,7 +381,7 @@ module Gitlab
       # the ref_name argument isn't found in the repo.
       def get_sha_from_ref(ref_name)
         regex = Regexp.escape(ref_name)
-        ref_obj = rugged.references.find { |i| i.name.match(/#{regex}$/) }
+        ref_obj = rugged.references.detect { |i| i.name.match(/#{regex}$/) }
         if ref_obj
           if ref_obj.target.is_a? Rugged::Tag::Annotation
             ref_obj.target.target.oid
@@ -397,16 +397,15 @@ module Gitlab
       # Return an array of log commits, given a populated Rugged::Walker object
       # and the public log() method's options.
       def build_log(walker, options)
-
         commits = Array.new
         skipped = 0
 
-        walker.each_with_index { |c, i|
+        walker.each do |c|
           break if commits.length >= options[:limit]
           should_push = false
           if options[:path]
             # Check the commit's deltas to see if it touches the :path argument
-            c.parents[0].diff(c).each_delta { |d|
+            c.parents[0].diff(c).each_delta do |d|
               should_push = false
               if d.old_file[:path].match(/^#{options[:path]}/)
                 should_push = true
@@ -415,7 +414,7 @@ module Gitlab
                 should_push = true
                 break
               end
-            }
+            end
           else
             # No :path option given
             should_push = true
@@ -425,7 +424,7 @@ module Gitlab
             skipped += 1
             commits.push(c) if skipped > options[:offset]
           end
-        }
+        end
 
         commits
       end
