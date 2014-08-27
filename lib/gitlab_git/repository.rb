@@ -404,7 +404,6 @@ module Gitlab
         walker.each do |c|
           break if commits.length >= options[:limit]
           should_push = false
-          sub_array = []
           if options[:path]
             if c.parents.length == 0
               # If there is no parent, then search the whole tree for the :path
@@ -416,7 +415,8 @@ module Gitlab
                 end
               end
             else
-              # Check the commit's deltas to see if it touches the :path argument
+              # Check the commit's deltas to see if it touches the :path
+              # argument
               diff = c.parents[0].diff(c)
               diff.find_similar! if options[:follow]
               diff.each_delta do |d|
@@ -432,11 +432,11 @@ module Gitlab
 
                     # If the 'follow' option is true and the file was renamed,
                     # then walk back from the parent with the old path name.
-                    sub_options = options.merge({
+                    sub_options = options.merge(
                       limit: options[:limit] - commits.length - 1,
                       offset: options[:offset] - skipped,
                       path: d.old_file[:path]
-                    })
+                    )
                     commits += build_log(c.parents[0].oid, sub_options)
 
                     walker.hide(c.parents[0].oid)

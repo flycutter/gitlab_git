@@ -209,7 +209,7 @@ describe Gitlab::Git::Repository do
 
       context "and 'path' is a directory" do
         let(:log_commits) do
-          repository.log(options.merge({ path: "encoding" }))
+          repository.log(options.merge(path: "encoding"))
         end
 
         it "should not follow renames" do
@@ -221,7 +221,7 @@ describe Gitlab::Git::Repository do
 
       context "and 'path' is a file that matches the new filename" do
         let(:log_commits) do
-          repository.log(options.merge({ path: "encoding/CHANGELOG" }))
+          repository.log(options.merge(path: "encoding/CHANGELOG"))
         end
 
         it "should follow renames" do
@@ -233,7 +233,7 @@ describe Gitlab::Git::Repository do
 
       context "and 'path' is a file that matches the old filename" do
         let(:log_commits) do
-          repository.log(options.merge({ path: "CHANGELOG" }))
+          repository.log(options.merge(path: "CHANGELOG"))
         end
 
         it "should not follow renames" do
@@ -249,7 +249,7 @@ describe Gitlab::Git::Repository do
 
       context "and 'path' is a directory" do
         let(:log_commits) do
-          repository.log(options.merge({ path: "encoding" }))
+          repository.log(options.merge(path: "encoding"))
         end
 
         it "should not follow renames" do
@@ -261,7 +261,7 @@ describe Gitlab::Git::Repository do
 
       context "and 'path' is a file that matches the new filename" do
         let(:log_commits) do
-          repository.log(options.merge({ path: "encoding/CHANGELOG" }))
+          repository.log(options.merge(path: "encoding/CHANGELOG"))
         end
 
         it "should not follow renames" do
@@ -273,7 +273,7 @@ describe Gitlab::Git::Repository do
 
       context "and 'path' is a file that matches the old filename" do
         let(:log_commits) do
-          repository.log(options.merge({ path: "CHANGELOG" }))
+          repository.log(options.merge(path: "CHANGELOG"))
         end
 
         it "should not follow renames" do
