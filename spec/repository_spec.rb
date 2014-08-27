@@ -189,4 +189,105 @@ describe Gitlab::Git::Repository do
   describe :archive_repo do
     it { repository.archive_repo('master', '/tmp').should == '/tmp/testme.git/testme-5937ac0a7beb003549fc5fd26fc247adbce4a52e.tar.gz' }
   end
+
+  describe "#log" do
+    commit_with_old_name = nil
+    commit_with_new_name = nil
+    rename_commit = nil
+
+    before(:all) do
+      # Add new commits so that there's a renamed file in the commit history
+      repo = Gitlab::Git::Repository.new(TEST_REPO_PATH).rugged
+
+      commit_with_old_name = new_commit_edit_old_file(repo)
+      rename_commit = new_commit_move_file(repo)
+      commit_with_new_name = new_commit_edit_new_file(repo)
+    end
+
+    context "where 'follow' == true" do
+      options = { ref: "master", follow: true }
+
+      context "and 'path' is a directory" do
+        let(:log_commits) do
+          repository.log(options.merge({ path: "encoding" }))
+        end
+
+        it "should not follow renames" do
+          expect(log_commits).to include(commit_with_new_name)
+          expect(log_commits).to include(rename_commit)
+          expect(log_commits).not_to include(commit_with_old_name)
+        end
+      end
+
+      context "and 'path' is a file that matches the new filename" do
+        let(:log_commits) do
+          repository.log(options.merge({ path: "encoding/CHANGELOG" }))
+        end
+
+        it "should follow renames" do
+          expect(log_commits).to include(commit_with_new_name)
+          expect(log_commits).to include(rename_commit)
+          expect(log_commits).to include(commit_with_old_name)
+        end
+      end
+
+      context "and 'path' is a file that matches the old filename" do
+        let(:log_commits) do
+          repository.log(options.merge({ path: "CHANGELOG" }))
+        end
+
+        it "should not follow renames" do
+          expect(log_commits).to include(commit_with_old_name)
+          expect(log_commits).to include(rename_commit)
+          expect(log_commits).not_to include(commit_with_new_name)
+        end
+      end
+    end
+
+    context "where 'follow' == false" do
+      options = { follow: false }
+
+      context "and 'path' is a directory" do
+        let(:log_commits) do
+          repository.log(options.merge({ path: "encoding" }))
+        end
+
+        it "should not follow renames" do
+          expect(log_commits).to include(commit_with_new_name)
+          expect(log_commits).to include(rename_commit)
+          expect(log_commits).not_to include(commit_with_old_name)
+        end
+      end
+
+      context "and 'path' is a file that matches the new filename" do
+        let(:log_commits) do
+          repository.log(options.merge({ path: "encoding/CHANGELOG" }))
+        end
+
+        it "should not follow renames" do
+          expect(log_commits).to include(commit_with_new_name)
+          expect(log_commits).to include(rename_commit)
+          expect(log_commits).not_to include(commit_with_old_name)
+        end
+      end
+
+      context "and 'path' is a file that matches the old filename" do
+        let(:log_commits) do
+          repository.log(options.merge({ path: "CHANGELOG" }))
+        end
+
+        it "should not follow renames" do
+          expect(log_commits).to include(commit_with_old_name)
+          expect(log_commits).to include(rename_commit)
+          expect(log_commits).not_to include(commit_with_new_name)
+        end
+      end
+    end
+
+    after(:all) do
+      # Erase our commits so other tests get the original repo
+      repo = Gitlab::Git::Repository.new(TEST_REPO_PATH).rugged
+      repo.references.update("refs/heads/master", SeedRepo::LastCommit::ID)
+    end
+  end
 end

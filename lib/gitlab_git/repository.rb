@@ -213,7 +213,8 @@ module Gitlab
           limit: 10,
           offset: 0,
           path: nil,
-          ref: root_ref
+          ref: root_ref,
+          follow: false
         }
 
         options = default_options.merge(options)
@@ -226,11 +227,7 @@ module Gitlab
           ref_sha = get_sha_from_ref(actual_ref)
         end
 
-        # Instantiate a Walker and add the SHA hash
-        walker = Rugged::Walker.new(rugged)
-        walker.push(ref_sha)
-
-        build_log(walker, options)
+        build_log(ref_sha, options)
       rescue Rugged::OdbError
         # Return an empty array if the ref wasn't found
         Array.new
@@ -394,25 +391,59 @@ module Gitlab
         end
       end
 
-      # Return an array of log commits, given a populated Rugged::Walker object
-      # and the public log() method's options.
-      def build_log(walker, options)
+      # Return an array of log commits, given an SHA hash and a hash of
+      # options.
+      def build_log(sha, options)
+        # Instantiate a Walker and add the SHA hash
+        walker = Rugged::Walker.new(rugged)
+        walker.push(sha)
+
         commits = Array.new
         skipped = 0
 
         walker.each do |c|
           break if commits.length >= options[:limit]
           should_push = false
+          sub_array = []
           if options[:path]
-            # Check the commit's deltas to see if it touches the :path argument
-            c.parents[0].diff(c).each_delta do |d|
-              should_push = false
-              if d.old_file[:path].match(/^#{options[:path]}/)
-                should_push = true
-                break
-              elsif d.new_file[:path].match(/^#{options[:path]}/)
-                should_push = true
-                break
+            if c.parents.length == 0
+              # If there is no parent, then search the whole tree for the :path
+              # argument
+              c.tree.walk(:postorder) do |_, tree_blob|
+                if tree_blob[:name].match(/^#{options[:path]}/)
+                  should_push = true
+                  break
+                end
+              end
+            else
+              # Check the commit's deltas to see if it touches the :path argument
+              diff = c.parents[0].diff(c)
+              diff.find_similar! if options[:follow]
+              diff.each_delta do |d|
+                should_push = false
+                if d.new_file[:path].match(/^#{options[:path]}/) ||
+                  d.old_file[:path].match(/^#{options[:path]}/)
+
+                  should_push = true
+
+                  if options[:follow] &&
+                    d.new_file[:path] == options[:path] &&
+                    d.old_file[:path] != d.new_file[:path]
+
+                    # If the 'follow' option is true and the file was renamed,
+                    # then walk back from the parent with the old path name.
+                    sub_options = options.merge({
+                      limit: options[:limit] - commits.length - 1,
+                      offset: options[:offset] - skipped,
+                      path: d.old_file[:path]
+                    })
+                    commits += build_log(c.parents[0].oid, sub_options)
+
+                    walker.hide(c.parents[0].oid)
+                  end
+
+                  break
+                end
               end
             end
           else
