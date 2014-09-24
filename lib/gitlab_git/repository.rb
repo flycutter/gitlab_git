@@ -228,17 +228,38 @@ module Gitlab
         options = default_options.merge(options)
         actual_ref = options[:ref] || root_ref
 
-        begin
-          ref_sha = rugged.lookup(actual_ref).oid
-        rescue Rugged::InvalidError, Rugged::OdbError
-          # Maybe the ref isn't an SHA; try treating it as a tag or branch name
-          ref_sha = get_sha_from_ref(actual_ref)
-        end
+        commit = commit_from_ref(actual_ref)
 
-        build_log(ref_sha, options)
+        if commit.respond_to?(:oid)
+          build_log(commit.oid, options)
+        else
+          []
+        end
       rescue Rugged::OdbError
         # Return an empty array if the ref wasn't found
         Array.new
+      end
+
+      # Get commit object from id of commit/tag/branch
+      # Use when you need to get start commit sha for commits list of
+      # specific branch or tag
+      def commit_from_ref(ref)
+        object = if branch = rugged.branches[ref]
+                   branch.target
+                 elsif tag = rugged.tags[ref]
+                   tag.target
+                 else
+                   rugged.lookup(ref)
+                 end
+
+
+        if object.kind_of?(Rugged::Commit)
+          object
+        elsif object.respond_to?(:target)
+          commit_from_ref(object.target.oid)
+        end
+      rescue Rugged::InvalidError, Rugged::OdbError
+        nil
       end
 
       # Delegate commits_between to Grit method
@@ -381,23 +402,6 @@ module Gitlab
       end
 
       private
-
-      # Return the commit hash of a named ref.  Raises a Rugged::OdbError if
-      # the ref_name argument isn't found in the repo.
-      def get_sha_from_ref(ref_name)
-        regex = Regexp.escape(ref_name)
-        ref_obj = rugged.references.detect { |i| i.name.match(/#{regex}$/) }
-        if ref_obj
-          if ref_obj.target.is_a? Rugged::Tag::Annotation
-            ref_obj.target.target.oid
-          else
-            ref_obj.target_id
-          end
-        else
-          # No ref_obj means we couldn't find the ref in the repo
-          raise Rugged::OdbError
-        end
-      end
 
       # Return an array of log commits, given an SHA hash and a hash of
       # options.
