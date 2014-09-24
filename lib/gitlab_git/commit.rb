@@ -167,11 +167,21 @@ module Gitlab
       end
 
       def diffs
-        raw_commit.diffs.map { |diff| Gitlab::Git::Diff.new(diff) }
+        if raw_commit.is_a?(Rugged::Commit)
+          raw_commit.parents[0].diff(raw_commit).map do |diff|
+            Gitlab::Git::Diff.new(diff)
+          end
+        else
+          raw_commit.diffs.map { |diff| Gitlab::Git::Diff.new(diff) }
+        end
       end
 
       def parents
-        raw_commit.parents
+        if raw_commit.is_a?(Rugged::Commit)
+          raw_commit.parents.map { |c| Gitlab::Git::Commit.new(c) }
+        else
+          raw_commit.parents
+        end
       end
 
       def tree
@@ -179,11 +189,19 @@ module Gitlab
       end
 
       def stats
-        raw_commit.stats
+        if raw_commit.is_a?(Rugged::Commit)
+          Gitlab::Git::CommitStats.new(raw_commit)
+        else
+          raw_commit.stats
+        end
       end
 
       def to_patch
-        raw_commit.to_patch
+        if raw_commit.is_a?(Rugged::Commit)
+          raw_commit.to_mbox
+        else
+          raw_commit.to_patch
+        end
       end
 
       # Get refs collection(Grit::Head or Grit::Remote or Grit::Tag)
@@ -219,6 +237,19 @@ module Gitlab
         @parent_ids = grit.parents.map(&:id)
       end
 
+      def init_from_rugged(rugged)
+        @raw_commit = rugged
+        @id = rugged.oid
+        @message = rugged.message
+        @authored_date = rugged.author[:time]
+        @committed_date = rugged.time
+        @author_name = rugged.author[:name]
+        @author_email = rugged.author[:email]
+        @committer_name = rugged.committer[:name]
+        @committer_email = rugged.committer[:email]
+        @parent_ids = rugged.parents.map(&:oid)
+      end
+
       def init_from_hash(hash)
         raw_commit = hash.symbolize_keys
 
@@ -242,6 +273,10 @@ module Gitlab
 
       def serialize_keys
         SERIALIZE_KEYS
+      end
+
+      def to_s
+        @id
       end
     end
   end

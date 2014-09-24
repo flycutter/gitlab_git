@@ -206,7 +206,7 @@ module Gitlab
         end
       end
 
-      # Delegate log to Grit method
+      # Use the Rugged Walker API to build an array of commits.
       #
       # Usage.
       #   repo.log(
@@ -226,14 +226,19 @@ module Gitlab
         }
 
         options = default_options.merge(options)
+        actual_ref = options[:ref] || root_ref
 
-        grit.log(
-          options[:ref] || root_ref,
-          options[:path],
-          max_count: options[:limit].to_i,
-          skip: options[:offset].to_i,
-          follow: options[:follow]
-        )
+        begin
+          ref_sha = rugged.lookup(actual_ref).oid
+        rescue Rugged::InvalidError, Rugged::OdbError
+          # Maybe the ref isn't an SHA; try treating it as a tag or branch name
+          ref_sha = get_sha_from_ref(actual_ref)
+        end
+
+        build_log(ref_sha, options)
+      rescue Rugged::OdbError
+        # Return an empty array if the ref wasn't found
+        Array.new
       end
 
       # Delegate commits_between to Grit method
@@ -373,6 +378,94 @@ module Gitlab
         walker.sorting(Rugged::SORT_TOPO | Rugged::SORT_REVERSE)
         walker.push(ref)
         walker.count
+      end
+
+      private
+
+      # Return the commit hash of a named ref.  Raises a Rugged::OdbError if
+      # the ref_name argument isn't found in the repo.
+      def get_sha_from_ref(ref_name)
+        regex = Regexp.escape(ref_name)
+        ref_obj = rugged.references.detect { |i| i.name.match(/#{regex}$/) }
+        if ref_obj
+          if ref_obj.target.is_a? Rugged::Tag::Annotation
+            ref_obj.target.target.oid
+          else
+            ref_obj.target_id
+          end
+        else
+          # No ref_obj means we couldn't find the ref in the repo
+          raise Rugged::OdbError
+        end
+      end
+
+      # Return an array of log commits, given an SHA hash and a hash of
+      # options.
+      def build_log(sha, options)
+        # Instantiate a Walker and add the SHA hash
+        walker = Rugged::Walker.new(rugged)
+        walker.push(sha)
+
+        commits = Array.new
+        skipped = 0
+
+        walker.each do |c|
+          break if commits.length >= options[:limit]
+          should_push = false
+          if options[:path]
+            if c.parents.length == 0
+              # If there is no parent, then search the whole tree for the :path
+              # argument
+              c.tree.walk(:postorder) do |_, tree_blob|
+                if tree_blob[:name].match(/^#{options[:path]}/)
+                  should_push = true
+                  break
+                end
+              end
+            else
+              # Check the commit's deltas to see if it touches the :path
+              # argument
+              diff = c.parents[0].diff(c)
+              diff.find_similar! if options[:follow]
+              diff.each_delta do |d|
+                should_push = false
+                if d.new_file[:path].match(/^#{options[:path]}/) ||
+                  d.old_file[:path].match(/^#{options[:path]}/)
+
+                  should_push = true
+
+                  if options[:follow] &&
+                    d.new_file[:path] == options[:path] &&
+                    d.old_file[:path] != d.new_file[:path]
+
+                    # If the 'follow' option is true and the file was renamed,
+                    # then walk back from the parent with the old path name.
+                    sub_options = options.merge(
+                      limit: options[:limit] - commits.length - 1,
+                      offset: options[:offset] - skipped,
+                      path: d.old_file[:path]
+                    )
+                    commits += build_log(c.parents[0].oid, sub_options)
+
+                    walker.hide(c.parents[0].oid)
+                  end
+
+                  break
+                end
+              end
+            end
+          else
+            # No :path option given
+            should_push = true
+          end
+
+          if should_push
+            skipped += 1
+            commits.push(c) if skipped > options[:offset]
+          end
+        end
+
+        commits
       end
     end
   end
