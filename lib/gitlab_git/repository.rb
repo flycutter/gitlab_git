@@ -821,13 +821,14 @@ module Gitlab
         # Put files into a prefix directory in the archive
         prefix = File.basename(name)
         extension = Pathname.new(file_path).extname
+        temp_file_path = file_path + ".#{Process.pid}"
 
         if extension == '.zip'
-          create_zip_archive(ref_name, file_path, prefix)
+          create_zip_archive(ref_name, temp_file_path, prefix)
         else
           # Open the file with the final result
-          FileUtils.mkdir_p(Pathname.new(file_path).dirname)
-          archive_file = File.new(file_path, 'wb')
+          FileUtils.mkdir_p(Pathname.new(temp_file_path).dirname)
+          archive_file = File.new(temp_file_path, 'wb')
 
           # Create a pipe to communicate with the compressor process
           pipe_rd, pipe_wr = IO.pipe
@@ -852,6 +853,8 @@ module Gitlab
 
           Process.waitpid(compress_pid)
         end
+
+        FileUtils.mv(temp_file_path, file_path)
       end
 
       # Create a zip file with the contents of the repo
