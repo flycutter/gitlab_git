@@ -1,6 +1,9 @@
-v 7.2.21 (unreleased)
+v 7.2.22 (unreleased)
   - Don't include commit ID in archive of tag
   - Don't include commit ID twice in archive of specific commit
+
+v 7.2.21
+  - Add checks if blob is a lfs pointer, values for size and oid.
 
 v 7.2.20
   - Switch back to GitHub Linguist and bump rugged and other gem versions
