@@ -144,7 +144,14 @@ module Gitlab
         return {} if commit.nil?
 
         project_name = self.name.chomp('.git')
-        prefix = "#{project_name}-#{ref}-#{commit.id}"
+        prefix =
+          if tag_names.include?(ref)
+            "#{project_name}-#{ref}"
+          elsif branch_names.include?(ref)
+            "#{project_name}-#{ref}-#{commit.id}"
+          else
+            "#{project_name}-#{commit.id}"
+          end
 
         {
           'RepoPath' => path,
