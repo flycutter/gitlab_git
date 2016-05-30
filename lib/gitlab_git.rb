@@ -4,7 +4,7 @@ require 'fileutils'
 require 'linguist'
 require 'active_support/core_ext/hash/keys'
 require 'active_support/core_ext/object/try'
-require 'rugged'
+require 'rugged' unless defined?(Rails::Railtie)
 require "charlock_holmes"
 
 # Gitlab::Git
